@@ -10,8 +10,7 @@ private:
     std::thread background_thread;
     std::atomic<bool> running;
     std::ofstream file;
-
-    //
+    
     void processEntries() {
         std::string msg;
 
