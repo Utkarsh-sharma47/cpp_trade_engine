@@ -3,7 +3,7 @@
 #include "DMPool.h"
 #include "Logger.h"
 #include "Order.h"
-#include <array>
+#include <vector> // MODIFICATION: Changed from array to vector to use Heap Memory
 #include <algorithm>
 
 // Assume price range 0 to 1,000,000 ticks (e.g., $0.00 to $10,000.00)
@@ -16,18 +16,20 @@ private:
     MemPool<Order> order_pool;
     std::atomic<bool> running;
 
-    // Flat Array Look-Up Tables (LUT)
-    // Points to the HEAD of the order linked-list at that specific price
-    std::array<Order*, MAX_PRICE_TICKS> bid_book = {nullptr};
-    std::array<Order*, MAX_PRICE_TICKS> ask_book = {nullptr};
+    // FIX 1: Flat Array Look-Up Tables moved to std::vector
+    // This dynamically allocates the 16MB of pointers on the Heap, avoiding Stack Overflow
+    std::vector<Order*> bid_book;
+    std::vector<Order*> ask_book;
 
     // Tracking the best bid and best ask for fast matching
     uint32_t best_bid = 0;
     uint32_t best_ask = MAX_PRICE_TICKS - 1;
 
 public:
+    // FIX 2: Initialize the vectors with MAX_PRICE_TICKS size filled with nullptrs
     MatchingEngine(LFQueue<Order>& in_queue, Logger& log) 
-        : order_queue(in_queue), logger(log), order_pool(100000), running(true) {}
+        : order_queue(in_queue), logger(log), order_pool(100000), running(true),
+          bid_book(MAX_PRICE_TICKS, nullptr), ask_book(MAX_PRICE_TICKS, nullptr) {}
 
     void stop() {
         running.store(false, std::memory_order_release);
@@ -42,7 +44,7 @@ public:
         }
     }
 
-private:
+    // FIX 3: Moved processOrder to PUBLIC so the benchmark loop can call it
     void processOrder(Order& order) {
         if (order.side == 'B') {
             matchAggressiveBuy(order);
@@ -57,8 +59,8 @@ private:
         }
     }
 
+private:
     void matchAggressiveBuy(Order& aggressive) {
-        // Walk up the ask book starting from the best (lowest) ask
         while (aggressive.quantity > 0 && best_ask <= aggressive.price_tick) {
             Order* passive = ask_book[best_ask];
             
@@ -71,7 +73,6 @@ private:
                     Order* to_delete = passive;
                     passive = passive->next;
                     
-                    // Remove from linked list
                     ask_book[best_ask] = passive;
                     if (passive) passive->prev = nullptr;
                     
@@ -79,15 +80,13 @@ private:
                 }
             }
 
-            // If the level is empty, move the best_ask up
             if (ask_book[best_ask] == nullptr) {
-                best_ask++; // Very fast integer increment
+                best_ask++; 
             }
         }
     }
 
     void matchAggressiveSell(Order& aggressive) {
-        // Walk down the bid book starting from the best (highest) bid
         while (aggressive.quantity > 0 && best_bid >= aggressive.price_tick) {
             Order* passive = bid_book[best_bid];
             
@@ -107,28 +106,26 @@ private:
                 }
             }
 
-            // If the level is empty, move the best_bid down
             if (bid_book[best_bid] == nullptr && best_bid > 0) {
                 best_bid--; 
             }
         }
     }
 
-    void addOrderToBook(const Order& order, std::array<Order*, MAX_PRICE_TICKS>& book, uint32_t& best_price, bool is_bid) {
+    // FIX 4: Changed parameter from std::array to std::vector
+    void addOrderToBook(const Order& order, std::vector<Order*>& book, uint32_t& best_price, bool is_bid) {
         Order* new_order = order_pool.allocate(order.system_id, order.price_tick, order.quantity, order.side);
         
-        // O(1) Insertion at the tail of the linked list for time-priority (FIFO)
         Order* head = book[order.price_tick];
         if (head == nullptr) {
             book[order.price_tick] = new_order;
         } else {
             Order* tail = head;
-            while (tail->next != nullptr) tail = tail->next; // Can be optimized by storing tail pointers too
+            while (tail->next != nullptr) tail = tail->next; 
             tail->next = new_order;
             new_order->prev = tail;
         }
 
-        // Update best prices
         if (is_bid && order.price_tick > best_bid) best_bid = order.price_tick;
         if (!is_bid && order.price_tick < best_ask) best_ask = order.price_tick;
     }
