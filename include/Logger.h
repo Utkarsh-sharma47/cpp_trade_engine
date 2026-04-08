@@ -1,7 +1,7 @@
 #pragma once
 #include "LFQueue.h"
 #include <thread>
-#include <fstream>
+#include <iostream>
 #include <string>
 
 class Logger {
@@ -9,41 +9,35 @@ private:
     LFQueue<std::string> queue;
     std::thread background_thread;
     std::atomic<bool> running;
-    std::ofstream file;
 
-    //
     void processEntries() {
         std::string msg;
-
-        while (running.load()) {
+        while (running.load(std::memory_order_acquire)) {
             while (queue.pop(msg)) {
-                file << msg << "\n"; //write to file
+                std::cout << "[LOG] " << msg << "\n"; // Output to CMD
             }
         }
-        
-        //drain left over
+        // Drain leftover
         while (queue.pop(msg)) {
-            file << msg << "\n";
+            std::cout << "[LOG] " << msg << "\n";
         }
     }
 
 public:
-    
-    Logger(const std::string& filename) : queue(1024), running(true) {
-        file.open(filename);
+    Logger() : queue(4096), running(true) {
         background_thread = std::thread(&Logger::processEntries, this);
     }
     
     ~Logger() {
-        running.store(false);
+        running.store(false, std::memory_order_release);
         if (background_thread.joinable()) {
-            background_thread.join(); // 
+            background_thread.join();
         }
-        file.close();
     }
     
     void log(const std::string& msg) {
-        
-        while(!queue.push(msg)); 
+        while(!queue.push(msg)) {
+            std::this_thread::yield(); // Backoff if queue is full
+        }
     }
 };
