@@ -1,13 +1,13 @@
 #pragma once
 #include "LFQueue.h"
-#include "DMPool.h"
+#include "DMpool.h"
 #include "Logger.h"
 #include "Order.h"
 #include <vector> // MODIFICATION: Changed from array to vector to use Heap Memory
 #include <algorithm>
 
 // Assume price range 0 to 1,000,000 ticks (e.g., $0.00 to $10,000.00)
-constexpr size_t MAX_PRICE_TICKS = 1000000;
+constexpr size_t MAX_PRICE_TICKS = 100000;
 
 class MatchingEngine {
 private:
@@ -28,7 +28,7 @@ private:
 public:
     // FIX 2: Initialize the vectors with MAX_PRICE_TICKS size filled with nullptrs
     MatchingEngine(LFQueue<Order>& in_queue, Logger& log) 
-        : order_queue(in_queue), logger(log), order_pool(100000), running(true),
+        : order_queue(in_queue), logger(log), order_pool(1000000), running(true),
           bid_book(MAX_PRICE_TICKS, nullptr), ask_book(MAX_PRICE_TICKS, nullptr) {}
 
     void stop() {
