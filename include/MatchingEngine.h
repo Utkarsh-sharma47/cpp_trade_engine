@@ -26,9 +26,9 @@ private:
     uint32_t best_ask = MAX_PRICE_TICKS - 1;
 
 public:
-    // FIX 2: Initialize the vectors with MAX_PRICE_TICKS size filled with nullptrs
-    MatchingEngine(LFQueue<Order>& in_queue, Logger& log) 
-        : order_queue(in_queue), logger(log), order_pool(1000000), running(true),
+    // FIX: Added 'pool_size' parameter. Defaults to 2M if not provided.
+    MatchingEngine(LFQueue<Order>& in_queue, Logger& log, size_t pool_size = 2000000) 
+        : order_queue(in_queue), logger(log), order_pool(pool_size), running(true),
           bid_book(MAX_PRICE_TICKS, nullptr), ask_book(MAX_PRICE_TICKS, nullptr) {}
 
     void stop() {
